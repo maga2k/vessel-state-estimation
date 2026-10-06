@@ -1,0 +1,19 @@
+# Base vessel for every run: a key of configs/vessels.yaml.
+# Override from the command line with:  python scripts/main.py --vessel sailboat
+vessel: merchant_ship
+
+sim:
+  dt: 0.01
+  duration: 600.0
+  seed: 42
+
+# Environment. Current: direction it flows TOWARDS. Wind: direction it blows FROM (degrees from North).
+env:
+  current_speed: 0.5
+  current_dir_deg: 90.0
+  current_sigma: 0.05
+  current_tau: 600.0
+  wind_speed: 8.0
+  wind_dir_deg: 300.0
+  wind_sigma: 1.5
+  wind_tau: 60.0

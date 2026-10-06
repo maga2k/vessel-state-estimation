@@ -1,0 +1,63 @@
+# Vessel parameter sets for the 3-DOF Nomoto model (see docs/theory/01-nomoto-3dof.md).
+#
+# IMPORTANT: values are representative orders of magnitude, NOT identified from a real
+# vessel. Replace them with data from a vessel you know (sea trials, zig-zag tests).
+#
+# length             L  [m]
+# nominal_speed      cruising surge speed [m/s]
+# K_prime, T_prime   non-dimensional Nomoto indices: K = K' U / L [1/s], T = T' L / U [s]
+# pivot_frac         pivot point distance ahead of the CG, as a fraction of L
+# T_sway, T_surge    first-order response times for sway / surge speed [s]
+# rudder_*           saturation [deg] and rate limit [deg/s]
+# maneuvers          typical maneuver settings (used by the maneuver library, session 2)
+
+merchant_ship:
+  description: "~200 m single-screw cargo ship, ~15 kn. Slow, large turning circle."
+  length: 200.0
+  nominal_speed: 7.7
+  K_prime: 0.8
+  T_prime: 2.5
+  pivot_frac: 0.3
+  T_sway: 15.0
+  T_surge: 80.0
+  leeway_coeff: 0.01
+  rudder_max_deg: 35.0
+  rudder_rate_deg_s: 2.3
+  maneuvers:
+    turn_rudder_deg: 15.0
+    zigzag_rudder_deg: 10.0
+    zigzag_heading_deg: 10.0
+
+sailboat:
+  description: "~12 m cruising sailboat under way at ~6 kn. Agile, heel and leeway ignored."
+  length: 12.0
+  nominal_speed: 3.1
+  K_prime: 1.2
+  T_prime: 0.8
+  pivot_frac: 0.25
+  T_sway: 2.0
+  T_surge: 8.0
+  leeway_coeff: 0.03
+  rudder_max_deg: 30.0
+  rudder_rate_deg_s: 10.0
+  maneuvers:
+    turn_rudder_deg: 12.0
+    zigzag_rudder_deg: 15.0
+    zigzag_heading_deg: 15.0
+
+small_boat:
+  description: "~7 m planing boat (RIB-like), ~15 kn. Very fast yaw response."
+  length: 7.0
+  nominal_speed: 8.0
+  K_prime: 0.8
+  T_prime: 1.5
+  pivot_frac: 0.3
+  T_sway: 0.8
+  T_surge: 3.0
+  leeway_coeff: 0.02
+  rudder_max_deg: 30.0
+  rudder_rate_deg_s: 20.0
+  maneuvers:
+    turn_rudder_deg: 15.0
+    zigzag_rudder_deg: 15.0
+    zigzag_heading_deg: 15.0
