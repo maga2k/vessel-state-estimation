@@ -34,6 +34,9 @@ sensors:
     vel_sigma: 0.1
     dropout_prob: 0.0
     dropout_windows: []      # e.g. [[200.0, 260.0]] = no fixes between t=200 s and t=260 s
+    outlier_prob: 0.0        # probability that a fix has a position jump
+    outlier_sigma: 30.0      # std of the jump per axis [m]
+    r_report_scale: 1.0      # reported R std / true noise std (1 = the sensor reports the truth)
   compass:
     rate_hz: 10.0
     sigma: 0.0175
@@ -45,8 +48,31 @@ ekf:
   q_scale: 1.0
   r_scale: 1.0
   use_compass: true
+  gate_prob: 0.0     # chi-square gate on each update's NIS (0 = off; try 0.999)
+  vel_noise: 0.004   # [m/s/sqrt(s)] velocity disturbance (wind/current) the IMU cannot see
   p0_pos: 5.0
   p0_vel: 0.5
   p0_psi: 0.1
   p0_accel_bias: 0.02
+  p0_gyro_bias: 0.002
+
+
+# Synthetic wave motion for the 3D attitude study (roll / pitch / linear accelerations).
+waves:
+  roll_sigma_deg: 4.0
+  pitch_sigma_deg: 2.0
+  peak_period: 7.0
+  bandwidth: 0.3
+  accel_sigma: 0.5
+  n_components: 12
+  include_maneuver_accel: true
+
+# MEKF tuning (attitude from gyro + accelerometer).
+mekf:
+  q_scale: 1.0
+  accel_lin_sigma: 0.6     # [m/s^2] linear acceleration the accelerometer cannot separate from gravity
+  turn_compensation: true  # subtract omega x [SOG, 0, 0] from the accelerometer (needs GPS speed)
+  accel_update_hz: 10.0
+  gate_prob: 0.0
+  p0_att: 0.1
   p0_gyro_bias: 0.002

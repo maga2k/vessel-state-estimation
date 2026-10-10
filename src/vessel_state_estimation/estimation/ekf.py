@@ -22,6 +22,7 @@ of the step (second order in dt; a frozen start-of-step heading drifts in fast t
 from __future__ import annotations
 
 import numpy as np
+from scipy.stats import chi2
 
 from ..angles import wrap_angle
 from ..config import EkfConfig, ImuConfig
@@ -78,7 +79,8 @@ def transition_jacobian(x: np.ndarray, u: np.ndarray, dt: float) -> np.ndarray:
     return F
 
 
-def process_noise(dt: float, imu: ImuConfig, q_scale: float = 1.0) -> np.ndarray:
+def process_noise(dt: float, imu: ImuConfig, q_scale: float = 1.0,
+                  vel_noise: float = 0.0) -> np.ndarray:
     """Discrete process noise Q = G diag(sigma^2) G^T + bias random walks.
 
     Per-sample IMU noise: sigma = density / sqrt(dt). Because the noise enters through a rotation
@@ -93,11 +95,16 @@ def process_noise(dt: float, imu: ImuConfig, q_scale: float = 1.0) -> np.ndarray
     Q[np.ix_(pos, vel)] = 0.5 * dt**3 * sa2 * np.eye(2)
     Q[np.ix_(vel, pos)] = 0.5 * dt**3 * sa2 * np.eye(2)
     Q[np.ix_(vel, vel)] = dt**2 * sa2 * np.eye(2)
+    if vel_noise > 0.0:  # velocity random walk not seen by the IMU (continuous white-noise model)
+        sv2 = vel_noise**2
+        Q[np.ix_(pos, pos)] += sv2 * dt**3 / 3.0 * np.eye(2)
+        Q[np.ix_(pos, vel)] += sv2 * dt**2 / 2.0 * np.eye(2)
+        Q[np.ix_(vel, pos)] += sv2 * dt**2 / 2.0 * np.eye(2)
+        Q[np.ix_(vel, vel)] += sv2 * dt * np.eye(2)
     Q[PSI, PSI] = dt**2 * sg2
     Q[B_AX, B_AX] = Q[B_AY, B_AY] = (q_scale * imu.accel_bias_rw) ** 2 * dt
     Q[B_G, B_G] = (q_scale * imu.gyro_bias_rw) ** 2 * dt
     return Q
-
 
 def initial_covariance(cfg: EkfConfig) -> np.ndarray:
     return np.diag([cfg.p0_pos**2] * 2 + [cfg.p0_psi**2] + [cfg.p0_vel**2] * 2
@@ -123,6 +130,24 @@ class PlanarEkf(Estimator):
         self.imu = imu_assumed  # what the filter BELIEVES about the IMU noise
         self._x = x0.astype(float).copy()
         self._P = initial_covariance(cfg) if P0 is None else P0.astype(float).copy()
+        self._q_cache: dict[float, np.ndarray] = {}  # Q depends only on dt: compute it once
+        self._gate_cache: dict[int, float] = {}  # chi-square gate threshold per dof
+
+    def _gate_threshold(self, dof: int) -> float:
+        if self.cfg.gate_prob <= 0.0:
+            return float("inf")
+        if dof not in self._gate_cache:
+            self._gate_cache[dof] = float(chi2.ppf(self.cfg.gate_prob, dof))
+        return self._gate_cache[dof]
+
+    def _process_noise(self, dt: float) -> np.ndarray:
+        key = round(dt, 9)
+        Q = self._q_cache.get(key)
+        if Q is None:
+            if len(self._q_cache) > 64:  # irregular dt: do not grow without bound
+                self._q_cache.clear()
+            Q = self._q_cache[key] = process_noise(dt, self.imu, self.cfg.q_scale, self.cfg.vel_noise)
+        return Q
 
     @property
     def x(self) -> np.ndarray:
@@ -134,7 +159,7 @@ class PlanarEkf(Estimator):
 
     def predict(self, u: np.ndarray, dt: float) -> None:
         F = transition_jacobian(self._x, u, dt)
-        Q = process_noise(dt, self.imu, self.cfg.q_scale)
+        Q = self._process_noise(dt)
         self._x = propagate(self._x, u, dt)
         P = F @ self._P @ F.T + Q
         self._P = 0.5 * (P + P.T)
@@ -151,6 +176,8 @@ class PlanarEkf(Estimator):
             raise ValueError(f"EKF cannot use sensor '{meas.sensor}'")
         R = self.cfg.r_scale**2 * meas.R
         S = H @ self._P @ H.T + R
+        if float(y @ np.linalg.solve(S, y)) > self._gate_threshold(len(y)):
+            return Innovation(y, S, accepted=False)  # gate: implausible measurement, ignore it
         K = np.linalg.solve(S, H @ self._P).T  # P H^T S^-1  (S, P symmetric)
         self._x = self._x + K @ y
         self._x[PSI] = wrap_angle(self._x[PSI])

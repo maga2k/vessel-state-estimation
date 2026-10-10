@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import numpy as np
 
-STREAMS: tuple[str, ...] = ("disturbance", "imu", "gps", "mag", "outlier", "init")
+STREAMS: tuple[str, ...] = ("disturbance", "imu", "gps", "mag", "outlier", "init", "waves", "imu3d")
 
 
 def make_rngs(seed: int) -> dict[str, np.random.Generator]:

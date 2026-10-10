@@ -9,12 +9,15 @@ import numpy as np
 
 from ..sensors.base import Measurement
 
-
 class Innovation(NamedTuple):
-    """Result of a measurement update: innovation y = z - h(x-) and its covariance S."""
+    """Result of a measurement update: innovation y = z - h(x-) and its covariance S.
+
+    ``accepted`` is False when the update was rejected by the gate (state and P left unchanged).
+    """
 
     y: np.ndarray
     S: np.ndarray
+    accepted: bool = True
 
     @property
     def nis(self) -> float:

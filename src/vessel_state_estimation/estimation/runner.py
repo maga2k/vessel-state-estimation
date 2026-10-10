@@ -18,6 +18,8 @@ class FilterLog:
     P: np.ndarray  # (n, nx, nx) covariances
     true_bias: np.ndarray  # (n, 3) true IMU bias [b_ax, b_ay, b_g]: EVALUATION ONLY
     innovations: list[tuple[float, str, Innovation]] = field(default_factory=list)
+    # same order as ``innovations``: was that measurement a true outlier? EVALUATION ONLY
+    outlier_flags: list[bool] = field(default_factory=list)
 
 
 def run_filter(ekf: PlanarEkf, measurements: list[Measurement], log_every: int = 10) -> FilterLog:
@@ -31,7 +33,8 @@ def run_filter(ekf: PlanarEkf, measurements: list[Measurement], log_every: int =
     Ps: list[np.ndarray] = []
     bs: list[np.ndarray] = []
     innovations: list[tuple[float, str, Innovation]] = []
-    t_prev, bias_prev, count = None, None, 0
+    flags: list[bool] = []
+    t_prev, bias_prev, count, z_prev = None, None, 0, None
 
     def snapshot() -> None:
         ts.append(t_prev)
@@ -45,11 +48,12 @@ def run_filter(ekf: PlanarEkf, measurements: list[Measurement], log_every: int =
                 if count % log_every == 0:
                     snapshot()
                 count += 1
-                ekf.predict(m.z, m.t - t_prev)
-            t_prev = m.t
+                ekf.predict(0.5 * (z_prev + m.z), m.t - t_prev)  # trapezoidal rule on the IMU samples
+            t_prev, z_prev = m.t, m.z
             bias_prev = np.asarray(m.info.get("bias", np.full(3, np.nan)))
         elif m.sensor in use:
             innovations.append((m.t, m.sensor, ekf.update(m)))
+            flags.append(bool(m.info.get("outlier", False)))
     if t_prev is not None and count % log_every == 0:
         snapshot()
-    return FilterLog(np.array(ts), np.array(xs), np.array(Ps), np.array(bs), innovations)
+    return FilterLog(np.array(ts), np.array(xs), np.array(Ps), np.array(bs), innovations, flags)

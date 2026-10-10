@@ -14,7 +14,7 @@ from .imu import PlanarImu
 
 def build_sensors(cfg: SensorsConfig, rngs: dict[str, np.random.Generator]) -> list[Sensor]:
     """One sensor per type, each on its own random stream (see ``rng.STREAMS``)."""
-    return [PlanarImu(cfg.imu, rngs["imu"]), Gps(cfg.gps, rngs["gps"]),
+    return [PlanarImu(cfg.imu, rngs["imu"]), Gps(cfg.gps, rngs["gps"], rngs["outlier"]),
             Compass(cfg.compass, rngs["mag"])]
 
 

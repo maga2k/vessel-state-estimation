@@ -71,10 +71,17 @@ class GpsConfig:
     vel_sigma: float = 0.1  # per axis [m/s]
     dropout_prob: float = 0.0  # independent loss probability of each fix
     dropout_windows: tuple = ()  # ((t_start, t_end), ...) [s]: no fixes inside
+    outlier_prob: float = 0.0  # probability that a fix carries a position jump (multipath)
+    outlier_sigma: float = 30.0  # std of that jump, per axis [m]
+    r_report_scale: float = 1.0  # reported R std / true noise std (< 1: the sensor is optimistic)
 
     def __post_init__(self) -> None:
         if self.rate_hz <= 0.0:
             raise ValueError("GPS rate_hz must be > 0")
+        if not 0.0 <= self.outlier_prob <= 1.0:
+            raise ValueError("GPS outlier_prob must be in [0, 1]")
+        if self.r_report_scale <= 0.0:
+            raise ValueError("GPS r_report_scale must be > 0")
         windows = tuple((float(a), float(b)) for a, b in self.dropout_windows)
         if any(b <= a for a, b in windows):
             raise ValueError("each GPS dropout window needs t_start < t_end")
@@ -120,6 +127,8 @@ class EkfConfig:
     q_scale: float = 1.0
     r_scale: float = 1.0
     use_compass: bool = True
+    gate_prob: float = 0.0  # chi-square gate on the NIS of each update (0 = off, e.g. 0.999)
+    vel_noise: float = 0.0  # extra velocity random walk density [m/s/sqrt(s)] (not seen by the IMU)
     p0_pos: float = 5.0  # initial 1-sigma uncertainties of the estimate
     p0_vel: float = 0.5  # [m/s]
     p0_psi: float = 0.1  # [rad]
@@ -129,6 +138,49 @@ class EkfConfig:
     def __post_init__(self) -> None:
         if self.q_scale <= 0.0 or self.r_scale <= 0.0:
             raise ValueError("q_scale and r_scale must be > 0")
+        if self.vel_noise < 0.0:
+            raise ValueError("vel_noise must be >= 0")
+        if not 0.0 <= self.gate_prob < 1.0:
+            raise ValueError("gate_prob must be in [0, 1)")
+
+@dataclass(frozen=True)
+class WaveConfig:
+    """Synthetic wave-induced motion (the 3-DOF planar model has no roll / pitch / heave).
+
+    Roll, pitch and the linear accelerations are narrowband random processes: sums of sinusoids
+    with random phases and frequencies spread around the peak period.
+    """
+
+    roll_sigma_deg: float = 4.0  # rms roll [deg]
+    pitch_sigma_deg: float = 2.0  # rms pitch [deg]
+    peak_period: float = 7.0  # [s]
+    bandwidth: float = 0.3  # relative half-width of the frequency band
+    accel_sigma: float = 0.5  # rms wave-induced linear acceleration, per NED axis [m/s^2]
+    n_components: int = 12
+    include_maneuver_accel: bool = True  # add the horizontal accelerations of the planar maneuver
+
+    def __post_init__(self) -> None:
+        if self.peak_period <= 0.0 or self.n_components < 1:
+            raise ValueError("wave peak_period must be > 0 and n_components >= 1")
+
+
+@dataclass(frozen=True)
+class MekfConfig:
+    """MEKF tuning (attitude from gyro + accelerometer)."""
+
+    q_scale: float = 1.0  # scales the assumed gyro noise / bias random walk std devs
+    accel_lin_sigma: float = 0.6  # unmodeled linear acceleration seen by the accelerometer [m/s^2]
+    turn_compensation: bool = True  # subtract the centripetal term  omega x [SOG, 0, 0]  (GPS speed)
+    accel_update_hz: float = 10.0  # the accelerometer is fused at this rate (errors are time-correlated)
+    gate_prob: float = 0.0  # chi-square gate on the accelerometer NIS (0 = off)
+    p0_att: float = 0.1  # initial attitude uncertainty, per axis [rad]
+    p0_gyro_bias: float = 2.0e-3  # [rad/s]
+
+    def __post_init__(self) -> None:
+        if self.q_scale <= 0.0 or self.accel_lin_sigma < 0.0 or self.accel_update_hz <= 0.0:
+            raise ValueError("invalid MEKF tuning")
+        if not 0.0 <= self.gate_prob < 1.0:
+            raise ValueError("gate_prob must be in [0, 1)")
 
 @dataclass(frozen=True)
 class ManeuverDefaults:
@@ -206,11 +258,13 @@ class Config:
     env: EnvConfig = field(default_factory=EnvConfig)
     sensors: SensorsConfig = field(default_factory=SensorsConfig)
     ekf: EkfConfig = field(default_factory=EkfConfig)
+    waves: WaveConfig = field(default_factory=WaveConfig)
+    mekf: MekfConfig = field(default_factory=MekfConfig)
 
     @classmethod
     def from_yaml(cls, path: str | Path) -> "Config":
         raw = yaml.safe_load(Path(path).read_text()) or {}
-        unknown = set(raw) - {"sim", "vessel", "env", "sensors", "ekf"}
+        unknown = set(raw) - {"sim", "vessel", "env", "sensors", "ekf", "waves", "mekf"}
         if unknown:
             raise TypeError(f"Unknown top-level config keys: {sorted(unknown)}")
         return cls(
@@ -219,4 +273,6 @@ class Config:
             env=EnvConfig(**raw.get("env", {})),
             sensors=SensorsConfig.from_dict(raw.get("sensors", {})),
             ekf=EkfConfig(**raw.get("ekf", {})),
+            waves=WaveConfig(**raw.get("waves", {})),
+            mekf=MekfConfig(**raw.get("mekf", {})),
         )
